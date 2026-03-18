@@ -104,6 +104,26 @@
     </div>
   </div>
 
+  <!-- Data Refresh -->
+  <div class="section">
+    <div class="section-label">
+      <i data-lucide="refresh-cw"></i>
+      Data Refresh
+    </div>
+    <div class="refresh-row">
+      <select id="refreshInterval" class="select-input" data-testid="select-refresh">
+        <option value="0">Manual only</option>
+        <option value="30">Every 30 seconds</option>
+        <option value="60" selected>Every 1 minute</option>
+        <option value="300">Every 5 minutes</option>
+      </select>
+      <button class="btn-refresh" id="manualRefresh" data-testid="button-manual-refresh">
+        <i data-lucide="refresh-cw"></i>
+      </button>
+    </div>
+    <div class="last-updated" id="lastUpdated" data-testid="text-last-updated">Not yet loaded</div>
+  </div>
+
   <!-- OSINT Layer Controls -->
   <div class="section">
     <div class="section-label">
@@ -245,26 +265,6 @@
       <button class="style-chip" data-mapid="dark" data-testid="style-dark">Dark</button>
       <button class="style-chip" data-mapid="terrain" data-testid="style-terrain">Terrain</button>
     </div>
-  </div>
-
-  <!-- Data Refresh -->
-  <div class="section">
-    <div class="section-label">
-      <i data-lucide="refresh-cw"></i>
-      Data Refresh
-    </div>
-    <div class="refresh-row">
-      <select id="refreshInterval" class="select-input" data-testid="select-refresh">
-        <option value="0">Manual only</option>
-        <option value="30">Every 30 seconds</option>
-        <option value="60" selected>Every 1 minute</option>
-        <option value="300">Every 5 minutes</option>
-      </select>
-      <button class="btn-refresh" id="manualRefresh" data-testid="button-manual-refresh">
-        <i data-lucide="refresh-cw"></i>
-      </button>
-    </div>
-    <div class="last-updated" id="lastUpdated" data-testid="text-last-updated">Not yet loaded</div>
   </div>
 
   <div class="sidebar-footer">
@@ -677,6 +677,7 @@
     <button class="ai-chip" data-prompt="Find nearest petrol stations near my current location">Petrol Nearby</button>
     <button class="ai-chip" data-prompt="Find EV charging stations near Kuala Lumpur">EV Charging</button>
     <button class="ai-chip" data-prompt="What are the emergency SOS numbers for highways in Malaysia?">SOS Numbers</button>
+    <button class="ai-chip ai-chip-best" data-prompt="Best time to travel from Seri Kembangan to KLCC">Best Time ⏰</button>
   </div>
 
   <!-- Chat messages -->

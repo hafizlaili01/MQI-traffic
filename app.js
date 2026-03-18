@@ -1430,6 +1430,35 @@ async function processAIInput(text) {
     return;
   }
 
+  // Route: Best time to travel (standalone query without explicit A→B)
+  const isBestTimeQuery = lower.includes('best time') || lower.includes('good time') ||
+    lower.includes('when to travel') || lower.includes('when should i') ||
+    lower.includes('less traffic') || lower.includes('avoid traffic') ||
+    lower.includes('least traffic') || lower.includes('lightest traffic') ||
+    lower.includes('shortest time') || lower.includes('fastest time') ||
+    lower.includes('when is traffic') || lower.includes('traffic forecast');
+
+  if (isBestTimeQuery) {
+    // Try to extract a journey pair; fall back to generic KL commute
+    const journey = parseJourneyQuery(text);
+    if (journey) {
+      // Full journey plan which includes the timeline
+      await planJourney(journey.from, journey.to);
+      return;
+    }
+    // Standalone: show 24h forecast for a generic 30-min commute
+    await delay(400);
+    const d = new Date();
+    const dayLabel = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][d.getDay()];
+    const html = buildBestTimeHtml(30, 'Your Origin', 'Your Destination');
+    addBotMessage(`
+      <div style="margin-bottom:6px;font-size:12px;opacity:.75">General Klang Valley traffic forecast — ${dayLabel}</div>
+      ${html}
+      <div style="margin-top:8px;font-size:11px;opacity:.65">Tip: Ask "Best time from Seri Kembangan to KLCC" for a personalised forecast with petrol &amp; EV chargers along your route.</div>
+    `);
+    return;
+  }
+
   // Route: Petrol
   if ((lower.includes('petrol') || lower.includes('fuel') || lower.includes('station') || lower.includes('minyak')) && !lower.includes('from') && !lower.includes('route') && !lower.includes('to ')) {
     const center = state.map ? state.map.getCenter() : { lng: 101.6869, lat: 3.1390 };
@@ -1461,11 +1490,12 @@ async function processAIInput(text) {
     <div>I can help you with:</div>
     <ul class="ai-feature-list">
       <li>🗺️ <strong>Route planning</strong> — "Plan route from KL to Penang"</li>
+      <li>🕒 <strong>Best time to travel</strong> — "Best time from Seri Kembangan to KLCC"</li>
       <li>⛽ <strong>Petrol stations</strong> — "Find petrol near me"</li>
       <li>🔋 <strong>EV charging</strong> — "EV charging stations nearby"</li>
       <li>🆘 <strong>SOS / Emergency</strong> — "SOS numbers"</li>
     </ul>
-    <div style="margin-top:8px;font-size:11px;opacity:.7">Tip: Try "Route from Seri Kembangan to KLCC"</div>
+    <div style="margin-top:8px;font-size:11px;opacity:.7">Tip: Try "Best time from Seri Kembangan to KLCC" for smart travel timing.</div>
   `);
 }
 
@@ -1477,18 +1507,21 @@ function parseJourneyQuery(text) {
     /(?:plan\s+)?(?:route\s+)?(?:from\s+)?(.+?)\s+to\s+(.+)/i,
     /(.+?)\s*[-–→]\s*(.+)/i,
   ];
+  // Trailing noise words to strip from the destination
+  const trailNoise = /\s+(today|now|this\s+morning|tonight|by\s+car|by\s+road|by\s+driving|by\s+vehicle|via\s+\w+)?\??\s*$/i;
   for (const pat of patterns) {
     const m = t.match(pat);
     if (m) {
-      const from = m[1].replace(/^(plan|my|journey|route|from|go|travel|drive)\s+/ig,'').trim();
-      const to = m[2].replace(/\s+by\s+(car|road|driving|vehicle).*$/i,'').trim();
+      const from = m[1].replace(/^(plan|my|journey|route|from|go|travel|drive|best\s+time)\s+/ig,'').trim();
+      let to = m[2].replace(/\s+by\s+(car|road|driving|vehicle).*$/i,'');
+      to = to.replace(trailNoise, '').trim();
       if (from.length > 1 && to.length > 1) return { from, to };
     }
   }
   return null;
 }
 
-async function planJourney(fromText, toText) {
+async function planJourney(fromText, toText, opts = {}) {
   showTypingIndicator();
   try {
     // Geocode both
@@ -1512,39 +1545,58 @@ async function planJourney(fromText, toText) {
     const fuelCost = fuelL * ron95;
 
     // Toll lookup
-    const tollKey = `${fromText.replace(/\s+/g,' ').toLowerCase()} ${toText.replace(/\s+/g,' ').toLowerCase()}`;
     const tollMatch = findToll(fromText, toText);
     const tollCost = tollMatch ? tollMatch.cost : null;
     const totalCost = fuelCost + (tollCost || 0);
 
-    // ETA
-    const etaH = Math.floor(durationMin / 60);
-    const etaM = Math.round(durationMin % 60);
-    const etaStr = etaH > 0 ? `${etaH}h ${etaM}min` : `${etaM} min`;
+    // ETA — adjust for current traffic
+    const now = new Date();
+    const currHour = now.getHours();
+    const profile = getTrafficProfile();
+    const currCongestion = profile[currHour];
+    const adjustedMin = adjustedDuration(durationMin, currCongestion);
+    const etaStr = formatMins(adjustedMin);
+    const baseEtaStr = formatMins(durationMin);
 
-    // Midpoint for nearby POI
+    // Route waypoints for accurate POI placement
+    const waypoints = (route && route.waypoints && route.waypoints.length > 0)
+      ? route.waypoints
+      : [{ lat: fromCoord.lat, lng: fromCoord.lng },
+         { lat: (fromCoord.lat + toCoord.lat) / 2, lng: (fromCoord.lng + toCoord.lng) / 2 },
+         { lat: toCoord.lat, lng: toCoord.lng }];
+
     const midLat = (fromCoord.lat + toCoord.lat) / 2;
     const midLng = (fromCoord.lng + toCoord.lng) / 2;
 
-    // Fetch petrol and EV near midpoint (non-blocking)
+    // Fetch petrol + EV along route (using real waypoints) AND best-time HTML in parallel
     const [petrolHtml, evHtml] = await Promise.all([
-      buildNearbyPOI(midLat, midLng, 'fuel', null, 'petrol', 3),
-      buildNearbyPOI(midLat, midLng, 'charging_station', null, 'ev', 2),
+      buildRoutePOIHtml(waypoints, 'fuel', 'petrol', distKm),
+      buildRoutePOIHtml(waypoints, 'charging_station', 'ev', distKm),
     ]);
+
+    // Best time timeline for this route
+    const fromName = fromCoord.name || fromText;
+    const toName   = toCoord.name   || toText;
+    const bestTimeHtml = buildBestTimeHtml(durationMin, fromName, toName);
 
     // Fly map to midpoint
     if (state.map) state.map.flyTo({ center: [midLng, midLat], zoom: 9, speed: 1.2 });
 
+    // Traffic status chip for current time
+    const congInfo = CONGESTION_LABEL(currCongestion);
+    const trafficChip = `<span class="traffic-now-chip ${congInfo.cls}-chip">${congInfo.label} now</span>`;
+
     addBotMessage(`
-      <div class="journey-header">🗺️ Route: <strong>${escapeHTML(fromCoord.name || fromText)}</strong> → <strong>${escapeHTML(toCoord.name || toText)}</strong></div>
+      <div class="journey-header">🗺️ Route: <strong>${escapeHTML(fromName)}</strong> → <strong>${escapeHTML(toName)}</strong> ${trafficChip}</div>
       <table class="journey-table">
         <tr><td>📍 Distance</td><td><strong>${distKm.toFixed(1)} km</strong></td></tr>
-        <tr><td>⏱️ Est. Travel Time</td><td><strong>${etaStr}</strong></td></tr>
+        <tr><td>⏱️ Est. Travel Time</td><td><strong>${etaStr}</strong> <span class="eta-note">(base ${baseEtaStr}, adj. for traffic)</span></td></tr>
         <tr><td>⛽ Fuel Used</td><td><strong>${fuelL.toFixed(1)} L</strong> @ 8L/100km</td></tr>
         <tr><td>💰 Fuel Cost</td><td><strong>RM ${fuelCost.toFixed(2)}</strong> (RON95 RM2.05/L)</td></tr>
         ${tollCost !== null ? `<tr><td>🛣️ Toll (est.)</td><td><strong>RM ${tollCost.toFixed(2)}</strong> — ${tollMatch.name}</td></tr>` : ''}
         <tr class="total-row"><td>💳 Total Est. Cost</td><td><strong>RM ${totalCost.toFixed(2)}</strong></td></tr>
       </table>
+
       <div class="poi-section">
         <div class="poi-label">⛽ Petrol Along Route</div>
         ${petrolHtml}
@@ -1553,6 +1605,11 @@ async function planJourney(fromText, toText) {
         <div class="poi-label">🔋 EV Charging Along Route</div>
         ${evHtml}
       </div>
+
+      <div class="best-time-section">
+        ${bestTimeHtml}
+      </div>
+
       <div class="sos-mini">
         🆘 Emergency: <a href="tel:999">POLIS/AMB 999</a> · <a href="tel:18008880000">PLUS 1800-88-0000</a> · <a href="tel:18002223277">EMAS 1800-22-3277</a>
       </div>
@@ -1581,14 +1638,34 @@ async function geocode(query) {
 
 async function getOSRMRoute(from, to) {
   try {
-    const url = `https://router.project-osrm.org/route/v1/driving/${from.lng},${from.lat};${to.lng},${to.lat}?overview=false`;
+    // overview=full returns encoded geometry; steps=true gives leg waypoints
+    const url = `https://router.project-osrm.org/route/v1/driving/${from.lng},${from.lat};${to.lng},${to.lat}?overview=simplified&geometries=geojson&steps=false`;
     const r = await fetch(url);
     const data = await r.json();
     if (data && data.routes && data.routes[0]) {
-      return { distance: data.routes[0].distance, duration: data.routes[0].duration };
+      const route = data.routes[0];
+      // Extract evenly-spaced waypoints along the route geometry
+      const coords = route.geometry?.coordinates || [];
+      const waypoints = sampleRouteWaypoints(coords, 5); // 5 points along route
+      return {
+        distance: route.distance,
+        duration: route.duration,
+        waypoints // [{lat, lng}, ...] sampled along real route
+      };
     }
     return null;
   } catch(e) { return null; }
+}
+
+// Sample N evenly-spaced [lng,lat] coords from OSRM GeoJSON geometry
+function sampleRouteWaypoints(coords, n) {
+  if (!coords || coords.length === 0) return [];
+  if (coords.length <= n) return coords.map(c => ({ lat: c[1], lng: c[0] }));
+  const step = (coords.length - 1) / (n - 1);
+  return Array.from({ length: n }, (_, i) => {
+    const c = coords[Math.round(i * step)];
+    return { lat: c[1], lng: c[0] };
+  });
 }
 
 function haversineKm(a, b) {
@@ -1629,12 +1706,207 @@ async function buildNearbyPOI(lat, lng, amenity, title, type, limit = 4) {
       const brand = el.tags?.brand || '';
       const dist = haversineKm({ lat, lng }, { lat: el.lat, lng: el.lon });
       const icon = type === 'petrol' ? '⛽' : '🔋';
-      return `<div class="poi-item">${icon} <strong>${escapeHTML(name)}</strong>${brand && brand !== name ? ` <span style="opacity:.6">(${escapeHTML(brand)})</span>` : ''} <span class="poi-dist">${dist.toFixed(1)} km</span></div>`;
+      return `<div class="poi-item">${icon} <strong>${escapeHTML(name)}</strong>${brand && brand !== name ? ` <span style="opacity:.6">(${escapeHTML(brand)})</span>` : ''} <span class="poi-dist">${dist.toFixed(1)} km away</span></div>`;
     }).join('');
     return items;
   } catch(e) {
     return `<div style="opacity:.6;font-size:11px">Could not load nearby ${type} data</div>`;
   }
+}
+
+// Fetch POI nodes near a point, return raw objects for deduplication
+async function fetchPOINodes(lat, lng, amenity, radiusM = 8000, limit = 6) {
+  try {
+    const q = `[out:json][timeout:12];node(around:${radiusM},${lat},${lng})[amenity=${amenity}];out ${limit};`;
+    const r = await fetch('https://overpass-api.de/api/interpreter', { method: 'POST', body: q });
+    const data = await r.json();
+    return (data.elements || []).map(el => ({
+      id: el.id,
+      lat: el.lat, lng: el.lon,
+      name: el.tags?.name || el.tags?.brand || (amenity === 'fuel' ? 'Petrol Station' : 'EV Charger'),
+      brand: el.tags?.brand || '',
+      operator: el.tags?.operator || '',
+      evSockets: el.tags?.['capacity:charging'] || el.tags?.['socket:type2'] || '',
+    }));
+  } catch(e) { return []; }
+}
+
+// Build deduplicated POI list from multiple route waypoints
+async function buildRoutePOIHtml(waypoints, amenity, type, totalDistKm) {
+  if (!waypoints || waypoints.length === 0) {
+    return `<div style="opacity:.6;font-size:11px">No waypoints available</div>`;
+  }
+
+  // Query each waypoint in parallel with smaller radius for accuracy
+  const segDistKm = totalDistKm / (waypoints.length - 1 || 1);
+  const radius = Math.min(Math.max(segDistKm * 500, 5000), 12000); // 5–12km radius per segment
+
+  const allNodes = await Promise.all(
+    waypoints.map(wp => fetchPOINodes(wp.lat, wp.lng, amenity, radius, 4))
+  );
+
+  // Flatten & deduplicate by node id, then sort by distance from route start
+  const seen = new Set();
+  const deduped = allNodes.flat().filter(n => {
+    if (seen.has(n.id)) return false;
+    seen.add(n.id);
+    return true;
+  });
+
+  if (deduped.length === 0) {
+    return `<div style="opacity:.6;font-size:11px">None found along route</div>`;
+  }
+
+  // Sort by proximity to first waypoint (start of route)
+  const start = waypoints[0];
+  deduped.sort((a, b) => haversineKm(start, a) - haversineKm(start, b));
+
+  const icon = type === 'petrol' ? '⛽' : '🔋';
+  return deduped.slice(0, 5).map(n => {
+    // Approximate route position: nearest waypoint index → "~Xkm into route"
+    let nearestWpIdx = 0;
+    let minD = Infinity;
+    waypoints.forEach((wp, i) => {
+      const d = haversineKm(wp, n);
+      if (d < minD) { minD = d; nearestWpIdx = i; }
+    });
+    const routePct = Math.round((nearestWpIdx / Math.max(waypoints.length - 1, 1)) * 100);
+    const brandStr = n.brand && n.brand !== n.name ? ` <span class="poi-brand">(${escapeHTML(n.brand)})</span>` : '';
+    const evStr = type === 'ev' && n.evSockets ? ` <span class="poi-badge">⚡${escapeHTML(n.evSockets)} socket</span>` : '';
+    return `<div class="poi-item">
+      ${icon} <strong>${escapeHTML(n.name)}</strong>${brandStr}${evStr}
+      <span class="poi-dist">${minD.toFixed(1)} km off-route · ~${routePct}% into journey</span>
+    </div>`;
+  }).join('');
+}
+
+// ===== TRAFFIC TIME INTELLIGENCE =====
+
+// Malaysian traffic congestion profile (0=free, 1=heaviest)
+// Based on typical KL/Selangor weekday & weekend patterns
+const TRAFFIC_PROFILE = {
+  weekday: [
+    0.15, 0.10, 0.08, 0.07, 0.10, 0.25, // 00-05
+    0.55, 0.90, 0.95, 0.75, 0.55, 0.50, // 06-11
+    0.60, 0.55, 0.50, 0.55, 0.75, 0.95, // 12-17
+    0.92, 0.80, 0.65, 0.45, 0.30, 0.20, // 18-23
+  ],
+  weekend: [
+    0.12, 0.08, 0.07, 0.06, 0.08, 0.12, // 00-05
+    0.20, 0.30, 0.45, 0.55, 0.65, 0.70, // 06-11
+    0.72, 0.68, 0.62, 0.58, 0.60, 0.65, // 12-17
+    0.68, 0.60, 0.50, 0.38, 0.28, 0.18, // 18-23
+  ],
+};
+
+const CONGESTION_LABEL = (v) =>
+  v < 0.30 ? { label: 'Free Flow', cls: 'tl-free',  bar: Math.round(v * 100) } :
+  v < 0.55 ? { label: 'Light',     cls: 'tl-light', bar: Math.round(v * 100) } :
+  v < 0.72 ? { label: 'Moderate',  cls: 'tl-mod',   bar: Math.round(v * 100) } :
+  v < 0.85 ? { label: 'Heavy',     cls: 'tl-heavy', bar: Math.round(v * 100) } :
+             { label: 'Jam',       cls: 'tl-jam',   bar: Math.round(v * 100) };
+
+function getTrafficProfile() {
+  const d = new Date();
+  const dow = d.getDay(); // 0=Sun, 6=Sat
+  return (dow === 0 || dow === 6) ? TRAFFIC_PROFILE.weekend : TRAFFIC_PROFILE.weekday;
+}
+
+// Given base duration (minutes at free flow), estimate actual duration with congestion
+function adjustedDuration(baseMin, congestionLevel) {
+  // congestion 0 → 1x, 0.5 → 1.4x, 0.9 → 2.5x, 1.0 → 3.5x
+  const mult = 1 + congestionLevel * 1.8 + Math.pow(congestionLevel, 2) * 0.5;
+  return Math.round(baseMin * mult);
+}
+
+function formatMins(m) {
+  const h = Math.floor(m / 60), min = Math.round(m % 60);
+  return h > 0 ? `${h}h ${min}min` : `${min} min`;
+}
+
+// Build best-time recommendation card
+function buildBestTimeHtml(baseMin, fromName, toName, forcedHour) {
+  const profile = getTrafficProfile();
+  const now = new Date();
+  const currentHour = forcedHour !== undefined ? forcedHour : now.getHours();
+  const isWeekend = now.getDay() === 0 || now.getDay() === 6;
+  const dayLabel = isWeekend ? 'Weekend' : 'Weekday';
+
+  // Build 24 hour slots
+  const slots = profile.map((cong, h) => ({
+    hour: h,
+    cong,
+    duration: adjustedDuration(baseMin, cong),
+    ...CONGESTION_LABEL(cong),
+  }));
+
+  // Best windows: top 4 lowest congestion hours
+  const sorted = [...slots].sort((a, b) => a.cong - b.cong);
+  const bestHours = sorted.slice(0, 4).map(s => s.hour).sort((a, b) => a - b);
+
+  // Worst windows: top 3 highest congestion hours
+  const worstHours = sorted.slice(-3).map(s => s.hour).sort((a, b) => a - b);
+
+  // Best time now or next
+  const nextBest = bestHours.find(h => h > currentHour) ?? bestHours[0];
+  const nextBestSlot = slots[nextBest];
+  const hoursUntil = nextBest > currentHour ? nextBest - currentHour : (24 - currentHour + nextBest);
+
+  // Current slot
+  const currSlot = slots[currentHour];
+
+  // Build visual timeline (show all 24 hours in compact bars)
+  const timelineRows = slots.map(s => {
+    const isCurrent = s.hour === currentHour;
+    const isBest = bestHours.includes(s.hour);
+    const isWorst = worstHours.includes(s.hour);
+    const ampm = s.hour === 0 ? '12am' : s.hour < 12 ? `${s.hour}am` : s.hour === 12 ? '12pm' : `${s.hour - 12}pm`;
+    const marker = isCurrent ? '◀ Now' : isBest ? '✓ Best' : isWorst ? '✗ Avoid' : '';
+    const markerCls = isCurrent ? 'tl-marker-now' : isBest ? 'tl-marker-best' : isWorst ? 'tl-marker-avoid' : '';
+    return `<tr class="tl-row ${isCurrent ? 'tl-row-current' : ''} ${isBest ? 'tl-row-best' : ''} ${isWorst ? 'tl-row-avoid' : ''}">
+      <td class="tl-hour">${ampm}</td>
+      <td class="tl-bar-cell"><div class="tl-bar ${s.cls}" style="width:${s.bar}%"></div></td>
+      <td class="tl-dur">${formatMins(s.duration)}</td>
+      <td class="tl-tag"><span class="tl-marker ${markerCls}">${marker}</span></td>
+    </tr>`;
+  }).join('');
+
+  // Best time summary message
+  const saveMins = currSlot.duration - nextBestSlot.duration;
+  const saveStr = saveMins > 0 ? `<span class="tl-save">Save ~${formatMins(saveMins)}</span>` : '';
+
+  return `
+    <div class="tl-header">
+      🕐 Best Time to Travel
+      <span class="tl-day-badge">${dayLabel}</span>
+    </div>
+    <div class="tl-route-label">${escapeHTML(fromName)} → ${escapeHTML(toName)}</div>
+
+    <div class="tl-recommendation">
+      <div class="tl-rec-now">
+        <span class="tl-rec-label">Now (${currentHour}:00)</span>
+        <span class="tl-rec-dur ${currSlot.cls}-text">${formatMins(currSlot.duration)}</span>
+        <span class="tl-rec-cong ${currSlot.cls}-text">${currSlot.label}</span>
+      </div>
+      <div class="tl-rec-best">
+        <span class="tl-rec-label">Best window</span>
+        <span class="tl-rec-dur tl-free-text">${formatMins(nextBestSlot.duration)} @ ${nextBest}:00</span>
+        <span class="tl-rec-cong">${hoursUntil === 0 ? 'Right now!' : `in ${hoursUntil}h`} ${saveStr}</span>
+      </div>
+    </div>
+
+    <div class="tl-scroll-hint">Scroll → full day forecast</div>
+    <div class="tl-table-wrap">
+      <table class="tl-table">${timelineRows}</table>
+    </div>
+
+    <div class="tl-tip">💡 <strong>Best times today:</strong>
+      ${bestHours.map(h => { const ampm = h < 12 ? `${h||12}am` : h === 12 ? '12pm' : `${h-12}pm`; return `<span class="tl-best-chip">${ampm}</span>`; }).join(' ')}
+    </div>
+    <div class="tl-tip tl-avoid-tip">⚠️ <strong>Avoid:</strong>
+      ${worstHours.map(h => { const ampm = h < 12 ? `${h||12}am` : h === 12 ? '12pm' : `${h-12}pm`; return `<span class="tl-avoid-chip">${ampm}</span>`; }).join(' ')}
+    </div>
+  `;
 }
 
 function buildSOSResponse() {

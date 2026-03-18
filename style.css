@@ -1544,10 +1544,21 @@ input, select { font: inherit; color: inherit; }
   100% { opacity: 0; transform: scale(1.22); }
 }
 
+/* FAB: stays visible on desktop (toggle), hides on mobile when panel is open
+   to prevent overlapping the panel input bar */
+@media (max-width: 768px) {
+  .ai-fab.active {
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(12px) scale(.88);
+    transition: opacity .2s ease, transform .25s ease;
+  }
+}
+
 /* Panel */
 .ai-panel {
   position: fixed;
-  bottom: 88px;
+  bottom: 96px;
   right: 28px;
   width: 360px;
   max-height: 560px;
@@ -1887,7 +1898,7 @@ input, select { font: inherit; color: inherit; }
   .sidebar { padding-bottom: env(safe-area-inset-bottom); }
   .osint-panel { padding-bottom: env(safe-area-inset-bottom); }
   .ai-fab { bottom: calc(28px + env(safe-area-inset-bottom)); }
-  .ai-panel { bottom: calc(88px + env(safe-area-inset-bottom)); }
+  .ai-panel { bottom: calc(96px + env(safe-area-inset-bottom)); }
 }
 @media (max-width: 768px) {
   @supports (padding: max(0px)) {
@@ -1918,4 +1929,257 @@ button, a, input, select, .chip, .ai-chip, .panel-tab, .map-ctrl-btn {
 #mapTooltip {
   will-change: transform;
   transform: translateZ(0);
+}
+
+/* ===== TRAFFIC TIMELINE (Best Time to Travel) ===== */
+.best-time-section {
+  margin-top: 12px;
+  border-top: 1px solid rgba(181,26,138,.2);
+  padding-top: 10px;
+}
+
+.tl-header {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--accent);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+.tl-day-badge {
+  font-size: 10px;
+  font-weight: 600;
+  background: rgba(181,26,138,.15);
+  color: var(--accent);
+  border-radius: 4px;
+  padding: 1px 6px;
+  margin-left: auto;
+}
+.tl-route-label {
+  font-size: 11px;
+  opacity: .7;
+  margin-bottom: 8px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Recommendation cards */
+.tl-recommendation {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.tl-rec-now, .tl-rec-best {
+  flex: 1;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 11px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.tl-rec-now  { background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.1); }
+.tl-rec-best { background: rgba(52,211,153,.08);  border: 1px solid rgba(52,211,153,.25); }
+[data-theme="light"] .tl-rec-now  { background: rgba(0,0,0,.04); border-color: rgba(0,0,0,.1); }
+[data-theme="light"] .tl-rec-best { background: rgba(16,120,60,.06); border-color: rgba(16,120,60,.2); }
+
+.tl-rec-label { font-size: 10px; opacity: .6; font-weight: 600; text-transform: uppercase; letter-spacing: .4px; }
+.tl-rec-dur   { font-size: 14px; font-weight: 700; }
+.tl-rec-cong  { font-size: 10px; opacity: .8; }
+
+/* Congestion text colours (applied to rec-dur / rec-cong) */
+.tl-free-text  { color: #34d399; }
+.tl-light-text { color: #86efac; }
+.tl-mod-text   { color: #fbbf24; }
+.tl-heavy-text { color: #f97316; }
+.tl-jam-text   { color: #ef4444; }
+[data-theme="light"] .tl-free-text  { color: #047857; }
+[data-theme="light"] .tl-light-text { color: #15803d; }
+[data-theme="light"] .tl-mod-text   { color: #b45309; }
+[data-theme="light"] .tl-heavy-text { color: #c2410c; }
+[data-theme="light"] .tl-jam-text   { color: #b91c1c; }
+
+/* Scroll hint */
+.tl-scroll-hint {
+  font-size: 10px;
+  opacity: .45;
+  text-align: right;
+  margin-bottom: 2px;
+}
+
+/* Timeline table */
+.tl-table-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  border-radius: 6px;
+  border: 1px solid rgba(255,255,255,.07);
+  margin-bottom: 8px;
+}
+[data-theme="light"] .tl-table-wrap { border-color: rgba(0,0,0,.09); }
+
+.tl-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+}
+.tl-row { transition: background .15s; }
+.tl-row:hover { background: rgba(181,26,138,.07); }
+.tl-row-current { background: rgba(181,26,138,.13) !important; font-weight: 700; }
+.tl-row-best    { background: rgba(52,211,153,.07); }
+.tl-row-avoid   { background: rgba(239,68,68,.06);  }
+
+.tl-hour {
+  padding: 4px 6px;
+  white-space: nowrap;
+  color: var(--text-secondary, #aaa);
+  width: 38px;
+  font-variant-numeric: tabular-nums;
+}
+[data-theme="light"] .tl-hour { color: #555; }
+.tl-row-current .tl-hour { color: var(--accent); }
+
+.tl-bar-cell { padding: 4px 6px; width: 100%; }
+.tl-bar {
+  height: 8px;
+  border-radius: 4px;
+  min-width: 4px;
+  transition: width .3s ease;
+}
+.tl-free  { background: #34d399; }
+.tl-light { background: #86efac; }
+.tl-mod   { background: #fbbf24; }
+.tl-heavy { background: #f97316; }
+.tl-jam   { background: #ef4444; }
+
+.tl-dur {
+  padding: 4px 6px;
+  white-space: nowrap;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  opacity: .85;
+  min-width: 52px;
+}
+
+.tl-tag { padding: 4px 4px 4px 2px; min-width: 54px; }
+.tl-marker {
+  font-size: 9px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  white-space: nowrap;
+  font-weight: 700;
+}
+.tl-marker-now   { background: rgba(181,26,138,.25); color: var(--accent); }
+.tl-marker-best  { background: rgba(52,211,153,.2);  color: #34d399; }
+.tl-marker-avoid { background: rgba(239,68,68,.15);  color: #ef4444; }
+[data-theme="light"] .tl-marker-now   { background: rgba(181,26,138,.15); color: #a21070; }
+[data-theme="light"] .tl-marker-best  { background: rgba(5,150,70,.12);   color: #047857; }
+[data-theme="light"] .tl-marker-avoid { background: rgba(220,38,38,.1);   color: #b91c1c; }
+
+/* Tip bars */
+.tl-tip {
+  font-size: 11px;
+  margin-top: 4px;
+  line-height: 1.6;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+}
+.tl-avoid-tip { margin-top: 2px; }
+
+.tl-best-chip {
+  display: inline-block;
+  background: rgba(52,211,153,.18);
+  color: #34d399;
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-weight: 700;
+  font-size: 10px;
+}
+.tl-avoid-chip {
+  display: inline-block;
+  background: rgba(239,68,68,.14);
+  color: #ef4444;
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-weight: 700;
+  font-size: 10px;
+}
+[data-theme="light"] .tl-best-chip  { background: rgba(5,150,70,.1);  color: #047857; }
+[data-theme="light"] .tl-avoid-chip { background: rgba(220,38,38,.1); color: #b91c1c; }
+
+.tl-save {
+  display: inline-block;
+  background: rgba(52,211,153,.2);
+  color: #34d399;
+  font-size: 10px;
+  font-weight: 700;
+  border-radius: 4px;
+  padding: 1px 6px;
+  margin-left: 4px;
+}
+[data-theme="light"] .tl-save { background: rgba(5,150,70,.1); color: #047857; }
+
+/* ===== POI BRAND / BADGE ===== */
+.poi-brand {
+  font-size: 10px;
+  opacity: .65;
+  font-weight: 400;
+}
+.poi-badge {
+  display: inline-block;
+  background: rgba(52,211,153,.15);
+  color: #34d399;
+  font-size: 9px;
+  font-weight: 700;
+  border-radius: 3px;
+  padding: 1px 5px;
+  margin-left: 3px;
+  vertical-align: middle;
+}
+[data-theme="light"] .poi-badge { background: rgba(5,150,70,.1); color: #047857; }
+
+/* ===== ETA NOTE ===== */
+.eta-note {
+  font-size: 10px;
+  opacity: .55;
+  font-weight: 400;
+}
+
+/* ===== TRAFFIC NOW CHIP (in journey header) ===== */
+.traffic-now-chip {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  border-radius: 4px;
+  padding: 2px 7px;
+  margin-left: 4px;
+  vertical-align: middle;
+}
+.tl-free-chip  { background: rgba(52,211,153,.18);  color: #34d399; }
+.tl-light-chip { background: rgba(134,239,172,.15);  color: #86efac; }
+.tl-mod-chip   { background: rgba(251,191,36,.15);   color: #fbbf24; }
+.tl-heavy-chip { background: rgba(249,115,22,.15);   color: #f97316; }
+.tl-jam-chip   { background: rgba(239,68,68,.15);    color: #ef4444; }
+[data-theme="light"] .tl-free-chip  { background: rgba(5,150,70,.1);    color: #047857; }
+[data-theme="light"] .tl-light-chip { background: rgba(21,128,61,.1);   color: #15803d; }
+[data-theme="light"] .tl-mod-chip   { background: rgba(180,83,9,.1);    color: #b45309; }
+[data-theme="light"] .tl-heavy-chip { background: rgba(194,65,12,.1);   color: #c2410c; }
+[data-theme="light"] .tl-jam-chip   { background: rgba(185,28,28,.1);   color: #b91c1c; }
+
+/* ===== BEST TIME QUICK CHIP ===== */
+.ai-chip-best {
+  background: linear-gradient(135deg, rgba(181,26,138,.18), rgba(99,26,181,.18));
+  border-color: rgba(181,26,138,.4);
+  font-weight: 700;
+}
+.ai-chip-best:hover {
+  background: linear-gradient(135deg, rgba(181,26,138,.3), rgba(99,26,181,.3));
+}
+[data-theme="light"] .ai-chip-best {
+  background: linear-gradient(135deg, rgba(181,26,138,.1), rgba(99,26,181,.1));
+  border-color: rgba(181,26,138,.35);
+  color: #a21070;
 }
