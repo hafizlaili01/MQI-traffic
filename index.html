@@ -1,0 +1,724 @@
+<!--
+   ______                            __
+  / ____/___  ____ ___  ____  __  __/ /____  _____
+ / /   / __ \/ __ `__ \/ __ \/ / / / __/ _ \/ ___/
+/ /___/ /_/ / / / / / / /_/ / /_/ / /_/  __/ /
+\____/\____/_/ /_/ /_/ .___/\__,_/\__/\___/_/
+                    /_/
+        Created with Perplexity Computer
+        https://www.perplexity.ai/computer
+-->
+
+<!-- Perplexity Computer Attribution — SEO Meta Tags -->
+<meta name="generator" content="Perplexity Computer">
+<meta name="author" content="Perplexity Computer">
+<meta property="og:see_also" content="https://www.perplexity.ai/computer">
+<link rel="author" href="https://www.perplexity.ai/computer">
+<!DOCTYPE html>
+<html lang="en" data-theme="dark" id="htmlRoot">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MIMOS Quantum Intelligence — Traffic Congestion Dashboard</title>
+  <meta name="description" content="MIMOS Quantum Intelligence — 3D traffic congestion dashboard with OSINT data overlays. Powered by OpenStreetMap and open-source intelligence frameworks.">
+
+  <!-- Fonts -->
+  <link href="https://api.fontshare.com/v2/css?f[]=satoshi@400,500,700&f[]=cabinet-grotesk@400,500,700,800&display=swap" rel="stylesheet">
+
+  <!-- Deck.gl standalone -->
+  <script src="https://unpkg.com/deck.gl@^9/dist.min.js"></script>
+
+  <!-- MapLibre GL JS (free, no API key) -->
+  <link href="https://unpkg.com/maplibre-gl@4/dist/maplibre-gl.css" rel="stylesheet" />
+  <script src="https://unpkg.com/maplibre-gl@4/dist/maplibre-gl.js"></script>
+
+  <!-- Turf.js for geospatial analysis -->
+  <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js"></script>
+
+  <!-- Lucide icons -->
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- ===================== SIDEBAR ===================== -->
+<aside class="sidebar" id="sidebar">
+  <div class="sidebar-header">
+    <div class="logo-wrap">
+      <!-- MIMOS Quantum Intelligence SVG Logo -->
+      <svg class="logo-icon" viewBox="0 0 36 36" fill="none" aria-label="MIMOS Quantum Intelligence" xmlns="http://www.w3.org/2000/svg">
+        <!-- Outer ring — silver wave motif -->
+        <circle cx="18" cy="18" r="16" stroke="var(--silver)" stroke-width="1" opacity="0.4" stroke-dasharray="3 2"/>
+        <!-- Inner quantum orbit rings -->
+        <ellipse cx="18" cy="18" rx="10" ry="5" stroke="var(--accent)" stroke-width="1.2" transform="rotate(-30 18 18)" opacity="0.7"/>
+        <ellipse cx="18" cy="18" rx="10" ry="5" stroke="var(--accent)" stroke-width="1.2" transform="rotate(30 18 18)" opacity="0.5"/>
+        <ellipse cx="18" cy="18" rx="10" ry="5" stroke="var(--silver)" stroke-width="0.8" opacity="0.35"/>
+        <!-- Core quantum node -->
+        <circle cx="18" cy="18" r="3.5" fill="var(--accent)" opacity="0.9"/>
+        <circle cx="18" cy="18" r="2" fill="white" opacity="0.9"/>
+        <!-- Orbital nodes -->
+        <circle cx="18" cy="8" r="1.8" fill="var(--accent)" opacity="0.7"/>
+        <circle cx="18" cy="28" r="1.8" fill="var(--accent)" opacity="0.7"/>
+        <circle cx="27.7" cy="13" r="1.4" fill="var(--silver)" opacity="0.6"/>
+        <circle cx="8.3" cy="23" r="1.4" fill="var(--silver)" opacity="0.6"/>
+      </svg>
+      <div>
+        <div class="logo-title">MIMOS <span class="accent">QI</span></div>
+        <div class="logo-sub">Quantum Intelligence</div>
+      </div>
+    </div>
+    <button class="sidebar-toggle" id="sidebarToggle" aria-label="Toggle sidebar" data-testid="button-sidebar-toggle">
+      <i data-lucide="panel-left-close"></i>
+    </button>
+  </div>
+
+  <!-- Area of Interest Search -->
+  <div class="section">
+    <div class="section-label">
+      <i data-lucide="map-pin"></i>
+      Area of Interest
+    </div>
+    <div class="search-box" data-testid="search-container">
+      <input
+        type="text"
+        id="areaSearch"
+        placeholder="Type city, address, or coordinates..."
+        class="search-input"
+        autocomplete="off"
+        data-testid="input-area-search"
+      >
+      <button class="search-btn" id="searchBtn" data-testid="button-search">
+        <i data-lucide="search"></i>
+      </button>
+    </div>
+    <div class="search-suggestions" id="searchSuggestions"></div>
+
+    <!-- Quick area presets -->
+    <div class="preset-chips" data-testid="preset-chips">
+      <button class="chip" data-place="Kuala Lumpur, Malaysia" data-lat="3.1390" data-lng="101.6869" data-testid="chip-kl">KL City</button>
+      <button class="chip" data-place="Singapore" data-lat="1.3521" data-lng="103.8198" data-testid="chip-sg">Singapore</button>
+      <button class="chip" data-place="Seri Kembangan, Selangor" data-lat="3.0321" data-lng="101.7079" data-testid="chip-sk">Seri Kembangan</button>
+      <button class="chip" data-place="George Town, Penang" data-lat="5.4141" data-lng="100.3288" data-testid="chip-penang">Penang</button>
+      <button class="chip" data-place="Johor Bahru, Malaysia" data-lat="1.4927" data-lng="103.7414" data-testid="chip-jb">Johor Bahru</button>
+    </div>
+  </div>
+
+  <!-- OSINT Layer Controls -->
+  <div class="section">
+    <div class="section-label">
+      <i data-lucide="layers"></i>
+      OSINT Data Layers
+    </div>
+    <div class="layer-list" data-testid="layer-controls">
+
+      <div class="layer-item">
+        <div class="layer-left">
+          <div class="layer-dot" style="background: #ff4d4d;"></div>
+          <div>
+            <div class="layer-name">Traffic Congestion</div>
+            <div class="layer-source">TomTom Flow API</div>
+          </div>
+        </div>
+        <label class="toggle" data-testid="toggle-traffic">
+          <input type="checkbox" id="layerTraffic" checked>
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+
+      <div class="layer-item">
+        <div class="layer-left">
+          <div class="layer-dot" style="background: #ff9500;"></div>
+          <div>
+            <div class="layer-name">Traffic Incidents</div>
+            <div class="layer-source">Waze/OSM Reports</div>
+          </div>
+        </div>
+        <label class="toggle" data-testid="toggle-incidents">
+          <input type="checkbox" id="layerIncidents" checked>
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+
+      <div class="layer-item">
+        <div class="layer-left">
+          <div class="layer-dot" style="background: #4fc3f7;"></div>
+          <div>
+            <div class="layer-name">Road Network</div>
+            <div class="layer-source">OpenStreetMap / Overpass</div>
+          </div>
+        </div>
+        <label class="toggle" data-testid="toggle-roads">
+          <input type="checkbox" id="layerRoads" checked>
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+
+      <div class="layer-item">
+        <div class="layer-left">
+          <div class="layer-dot" style="background: #a78bfa;"></div>
+          <div>
+            <div class="layer-name">3D Buildings</div>
+            <div class="layer-source">OSM Buildings</div>
+          </div>
+        </div>
+        <label class="toggle" data-testid="toggle-buildings">
+          <input type="checkbox" id="layerBuildings" checked>
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+
+      <div class="layer-item">
+        <div class="layer-left">
+          <div class="layer-dot" style="background: #34d399;"></div>
+          <div>
+            <div class="layer-name">POI Intelligence</div>
+            <div class="layer-source">OSM Points of Interest</div>
+          </div>
+        </div>
+        <label class="toggle" data-testid="toggle-poi">
+          <input type="checkbox" id="layerPOI">
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+
+      <div class="layer-item">
+        <div class="layer-left">
+          <div class="layer-dot" style="background: #fbbf24;"></div>
+          <div>
+            <div class="layer-name">Heatmap Density</div>
+            <div class="layer-source">Aggregated Flow Data</div>
+          </div>
+        </div>
+        <label class="toggle" data-testid="toggle-heatmap">
+          <input type="checkbox" id="layerHeatmap">
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+
+      <div class="layer-item">
+        <div class="layer-left">
+          <div class="layer-dot" style="background: #e03baa;"></div>
+          <div>
+            <div class="layer-name">Live Cameras</div>
+            <div class="layer-source">LTA / OSM Surveillance</div>
+          </div>
+        </div>
+        <label class="toggle" data-testid="toggle-cameras">
+          <input type="checkbox" id="layerCameras" checked>
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- 3D View Controls -->
+  <div class="section">
+    <div class="section-label">
+      <i data-lucide="box"></i>
+      3D View Settings
+    </div>
+    <div class="slider-row">
+      <label class="slider-label">Tilt <span id="tiltVal">45°</span></label>
+      <input type="range" id="tiltSlider" min="0" max="85" value="45" class="range-input" data-testid="slider-tilt">
+    </div>
+    <div class="slider-row">
+      <label class="slider-label">Extrusion Height <span id="extrusionVal">50x</span></label>
+      <input type="range" id="extrusionSlider" min="1" max="200" value="50" class="range-input" data-testid="slider-extrusion">
+    </div>
+    <div class="slider-row">
+      <label class="slider-label">Opacity <span id="opacityVal">80%</span></label>
+      <input type="range" id="opacitySlider" min="10" max="100" value="80" class="range-input" data-testid="slider-opacity">
+    </div>
+  </div>
+
+  <!-- Map Style -->
+  <div class="section">
+    <div class="section-label">
+      <i data-lucide="map"></i>
+      Map Style
+    </div>
+    <div class="style-chips" data-testid="map-style-chips">
+      <button class="style-chip active" data-mapid="satellite" data-testid="style-satellite">Satellite</button>
+      <button class="style-chip" data-mapid="roadmap" data-testid="style-roadmap">Roadmap</button>
+      <button class="style-chip" data-mapid="dark" data-testid="style-dark">Dark</button>
+      <button class="style-chip" data-mapid="terrain" data-testid="style-terrain">Terrain</button>
+    </div>
+  </div>
+
+  <!-- Data Refresh -->
+  <div class="section">
+    <div class="section-label">
+      <i data-lucide="refresh-cw"></i>
+      Data Refresh
+    </div>
+    <div class="refresh-row">
+      <select id="refreshInterval" class="select-input" data-testid="select-refresh">
+        <option value="0">Manual only</option>
+        <option value="30">Every 30 seconds</option>
+        <option value="60" selected>Every 1 minute</option>
+        <option value="300">Every 5 minutes</option>
+      </select>
+      <button class="btn-refresh" id="manualRefresh" data-testid="button-manual-refresh">
+        <i data-lucide="refresh-cw"></i>
+      </button>
+    </div>
+    <div class="last-updated" id="lastUpdated" data-testid="text-last-updated">Not yet loaded</div>
+  </div>
+
+  <div class="sidebar-footer">
+    <a href="https://www.perplexity.ai/computer" target="_blank" rel="noopener noreferrer" class="pplx-attr">
+      Created with Perplexity Computer
+    </a>
+  </div>
+</aside>
+
+<!-- ===================== MAIN CONTENT ===================== -->
+<main class="main" id="main">
+
+  <!-- Top bar -->
+  <header class="topbar">
+    <!-- Mobile hamburger (hidden on desktop) -->
+    <button class="topbar-btn mobile-menu-btn" id="mobileMenuBtn" aria-label="Open menu" data-testid="button-mobile-menu">
+      <i data-lucide="menu"></i>
+    </button>
+
+    <!-- Desktop sidebar open (hidden on mobile) -->
+    <button class="topbar-btn desktop-sidebar-btn" id="sidebarOpenBtn" style="display:none" data-testid="button-sidebar-open">
+      <i data-lucide="panel-left-open"></i>
+    </button>
+
+    <div class="topbar-title" id="currentArea" data-testid="text-current-area">
+      <i data-lucide="map-pin"></i>
+      <span class="topbar-area-text">Kuala Lumpur, Malaysia</span>
+    </div>
+
+    <div class="topbar-right">
+      <!-- Live indicator -->
+      <div class="live-badge" data-testid="status-live">
+        <span class="live-dot"></span>
+        LIVE
+      </div>
+
+      <!-- KPI mini stats (desktop only — mobile shows in strip below) -->
+      <div class="kpi-bar" data-testid="kpi-bar">
+        <div class="kpi-mini">
+          <span class="kpi-mini-val" id="kpiCongestion" data-testid="kpi-congestion">–</span>
+          <span class="kpi-mini-label">Congestion</span>
+        </div>
+        <div class="kpi-divider"></div>
+        <div class="kpi-mini">
+          <span class="kpi-mini-val" id="kpiIncidents" data-testid="kpi-incidents">–</span>
+          <span class="kpi-mini-label">Incidents</span>
+        </div>
+        <div class="kpi-divider"></div>
+        <div class="kpi-mini">
+          <span class="kpi-mini-val" id="kpiRoads" data-testid="kpi-roads">–</span>
+          <span class="kpi-mini-label">Road Segs</span>
+        </div>
+        <div class="kpi-divider"></div>
+        <div class="kpi-mini">
+          <span class="kpi-mini-val" id="kpiAvgSpeed" data-testid="kpi-avg-speed">–</span>
+          <span class="kpi-mini-label">Avg Speed</span>
+        </div>
+      </div>
+
+      <button class="topbar-btn theme-toggle-btn" id="themeToggle" aria-label="Toggle day/night mode" data-testid="button-theme-toggle" title="Toggle Day / Night">
+        <span class="theme-toggle-inner" id="themeToggleInner">
+          <i data-lucide="moon"></i>
+          <span class="theme-label">Night</span>
+        </span>
+      </button>
+
+      <button class="topbar-btn" id="screenshotBtn" aria-label="Export screenshot" data-testid="button-export">
+        <i data-lucide="download"></i>
+      </button>
+    </div>
+  </header>
+
+  <!-- Mobile KPI strip (visible only on mobile, below topbar) -->
+  <div class="mobile-kpi-strip" id="mobileKpiStrip">
+    <div class="mkpi-item">
+      <span class="mkpi-val" id="mkpiCongestion">–</span>
+      <span class="mkpi-label">Congestion</span>
+    </div>
+    <div class="mkpi-divider"></div>
+    <div class="mkpi-item">
+      <span class="mkpi-val" id="mkpiIncidents">–</span>
+      <span class="mkpi-label">Incidents</span>
+    </div>
+    <div class="mkpi-divider"></div>
+    <div class="mkpi-item">
+      <span class="mkpi-val" id="mkpiRoads">–</span>
+      <span class="mkpi-label">Road Segs</span>
+    </div>
+    <div class="mkpi-divider"></div>
+    <div class="mkpi-item">
+      <span class="mkpi-val" id="mkpiAvgSpeed">–</span>
+      <span class="mkpi-label">Avg Speed</span>
+    </div>
+  </div>
+
+  <!-- Map Container -->
+  <div class="map-wrap" id="mapWrap">
+    <div id="map" data-testid="map-container"></div>
+
+    <!-- Loading overlay -->
+    <div class="map-loading" id="mapLoading" data-testid="overlay-loading">
+      <div class="loading-spinner"></div>
+      <div class="loading-text">Fetching OSINT data…</div>
+      <div class="loading-sub" id="loadingDetail">Connecting to OpenStreetMap</div>
+    </div>
+
+    <!-- Map compass / controls -->
+    <div class="map-controls" data-testid="map-controls">
+      <button class="map-ctrl-btn" id="btnRotateReset" title="Reset rotation" data-testid="button-reset-rotation">
+        <i data-lucide="compass"></i>
+      </button>
+      <button class="map-ctrl-btn" id="btnZoomIn" title="Zoom in" data-testid="button-zoom-in">
+        <i data-lucide="plus"></i>
+      </button>
+      <button class="map-ctrl-btn" id="btnZoomOut" title="Zoom out" data-testid="button-zoom-out">
+        <i data-lucide="minus"></i>
+      </button>
+      <button class="map-ctrl-btn" id="btnFitArea" title="Fit to area" data-testid="button-fit-area">
+        <i data-lucide="maximize-2"></i>
+      </button>
+    </div>
+
+    <!-- Legend -->
+    <div class="legend" data-testid="map-legend">
+      <div class="legend-title">Traffic Index</div>
+      <div class="legend-bar">
+        <div class="legend-gradient"></div>
+        <div class="legend-labels">
+          <span>Free</span>
+          <span>Slow</span>
+          <span>Jam</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Bottom OSINT Panel -->
+  <div class="osint-panel" id="osintPanel" data-testid="osint-panel">
+    <div class="panel-tabs" data-testid="panel-tabs">
+      <button class="panel-tab active" data-tab="incidents" data-testid="tab-incidents" title="Incidents">
+        <i data-lucide="alert-triangle"></i><span class="tab-label"> Incidents</span>
+      </button>
+      <button class="panel-tab" data-tab="roads" data-testid="tab-roads" title="Road Intelligence">
+        <i data-lucide="route"></i><span class="tab-label"> Road Intelligence</span>
+      </button>
+      <button class="panel-tab" data-tab="osint" data-testid="tab-osint" title="OSINT Sources">
+        <i data-lucide="shield"></i><span class="tab-label"> OSINT Sources</span>
+      </button>
+      <button class="panel-tab" data-tab="cameras" data-testid="tab-cameras" title="Live Cameras">
+        <i data-lucide="camera"></i><span class="tab-label"> Live Cameras</span>
+      </button>
+      <button class="panel-tab" data-tab="analytics" data-testid="tab-analytics" title="Analytics">
+        <i data-lucide="bar-chart-2"></i><span class="tab-label"> Analytics</span>
+      </button>
+      <button class="panel-collapse" id="panelCollapse" data-testid="button-panel-collapse">
+        <i data-lucide="chevron-down"></i>
+      </button>
+    </div>
+
+    <div class="panel-content" id="panelContent" data-testid="panel-content">
+
+      <!-- Incidents Tab -->
+      <div class="tab-pane active" data-pane="incidents" data-testid="pane-incidents">
+        <div class="incident-list" id="incidentList" data-testid="incident-list">
+          <div class="empty-state">
+            <i data-lucide="map-pin-off"></i>
+            <p>Search an area to load incident data</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Roads Tab -->
+      <div class="tab-pane" data-pane="roads" data-testid="pane-roads">
+        <div class="road-stats" id="roadStats" data-testid="road-stats">
+          <div class="empty-state">
+            <i data-lucide="route"></i>
+            <p>Search an area to analyze road network</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- OSINT Sources Tab -->
+      <div class="tab-pane" data-pane="osint" data-testid="pane-osint">
+        <div class="osint-sources">
+          <div class="source-card" data-testid="source-card-osm">
+            <div class="source-icon" style="background: #4fc3f722; color: #4fc3f7;">
+              <i data-lucide="globe"></i>
+            </div>
+            <div>
+              <div class="source-name">OpenStreetMap / Overpass API</div>
+              <div class="source-desc">Road network, POIs, building footprints. Crowd-sourced, freely available under ODbL license.</div>
+              <div class="source-status online" data-testid="status-osm">● Online</div>
+            </div>
+          </div>
+          <div class="source-card" data-testid="source-card-tomtom">
+            <div class="source-icon" style="background: #ff4d4d22; color: #ff4d4d;">
+              <i data-lucide="activity"></i>
+            </div>
+            <div>
+              <div class="source-name">TomTom Traffic Flow API</div>
+              <div class="source-desc">Real-time traffic speed, flow segments, congestion scoring. Free tier: 2,500 req/day.</div>
+              <div class="source-status online" data-testid="status-tomtom">● Free Tier Active</div>
+            </div>
+          </div>
+          <div class="source-card" data-testid="source-card-nominatim">
+            <div class="source-icon" style="background: #34d39922; color: #34d399;">
+              <i data-lucide="search"></i>
+            </div>
+            <div>
+              <div class="source-name">Nominatim Geocoding</div>
+              <div class="source-desc">OSM-based free geocoding service. Convert place names and addresses to coordinates.</div>
+              <div class="source-status online" data-testid="status-nominatim">● Online</div>
+            </div>
+          </div>
+          <div class="source-card" data-testid="source-card-overpass">
+            <div class="source-icon" style="background: #a78bfa22; color: #a78bfa;">
+              <i data-lucide="database"></i>
+            </div>
+            <div>
+              <div class="source-name">Overpass Turbo</div>
+              <div class="source-desc">Advanced OSM data querying engine. Fetches road segments, speed limits, traffic signals.</div>
+              <div class="source-status online" data-testid="status-overpass">● Online</div>
+            </div>
+          </div>
+          <div class="source-card" data-testid="source-card-waze">
+            <div class="source-icon" style="background: #fbbf2422; color: #fbbf24;">
+              <i data-lucide="alert-triangle"></i>
+            </div>
+            <div>
+              <div class="source-name">Waze-Sourced Incidents (via OSINT)</div>
+              <div class="source-desc">Crowdsourced incident data including accidents, road closures, hazards. Simulated via OSM data in this demo.</div>
+              <div class="source-status demo" data-testid="status-waze">● Demo Mode</div>
+            </div>
+          </div>
+          <div class="source-card" data-testid="source-card-lta">
+            <div class="source-icon" style="background: #e03baa22; color: #e03baa;">
+              <i data-lucide="camera"></i>
+            </div>
+            <div>
+              <div class="source-name">LTA Traffic Images (data.gov.sg)</div>
+              <div class="source-desc">~90 live CCTV snapshots from Singapore expressways &amp; arterials. Refreshed every 20 seconds. Free, no key required.</div>
+              <div class="source-status online" id="statusLTA" data-testid="status-lta">● Loading…</div>
+            </div>
+          </div>
+          <div class="source-card" data-testid="source-card-osm-cam">
+            <div class="source-icon" style="background: #a78bfa22; color: #a78bfa;">
+              <i data-lucide="shield"></i>
+            </div>
+            <div>
+              <div class="source-name">OSM Surveillance Nodes (Overpass)</div>
+              <div class="source-desc">Community-tagged CCTV camera positions from OpenStreetMap using man_made=surveillance tag in the current viewport.</div>
+              <div class="source-status online" id="statusOSMCam" data-testid="status-osm-cam">● Querying…</div>
+            </div>
+          </div>
+          <div class="source-card" data-testid="source-card-my-cam">
+            <div class="source-icon" style="background: #34d39922; color: #34d399;">
+              <i data-lucide="video"></i>
+            </div>
+            <div>
+              <div class="source-name">Malaysia Highway Cameras (PLUS/LLM)</div>
+              <div class="source-desc">Curated dataset of ~40 known highway CCTV positions along PLUS/LLM expressways (KL, Penang, JB). Snapshots via public OSINT sources.</div>
+              <div class="source-status online" data-testid="status-my-cam">● OSINT Dataset</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Live Cameras Tab -->
+      <div class="tab-pane" data-pane="cameras" data-testid="pane-cameras">
+        <div class="cameras-toolbar" id="camerasToolbar">
+          <div class="cameras-stats">
+            <span class="cam-count" id="camCount">— cameras</span>
+            <span class="cam-source" id="camSource">Loading…</span>
+          </div>
+          <div class="cameras-actions">
+            <button class="cam-action-btn" id="camRefreshBtn" title="Refresh camera images" data-testid="btn-cam-refresh">
+              <i data-lucide="refresh-cw"></i> Refresh
+            </button>
+            <select class="cam-filter" id="camFilter" data-testid="cam-filter">
+              <option value="all">All Cameras</option>
+              <option value="sg">Singapore (LTA)</option>
+              <option value="my">Malaysia (Highway)</option>
+              <option value="osm">OSM Surveillance</option>
+            </select>
+          </div>
+        </div>
+        <div class="camera-grid" id="cameraGrid" data-testid="camera-grid">
+          <div class="cam-loading"><i data-lucide="loader"></i> Fetching live camera feeds…</div>
+        </div>
+      </div>
+
+      <!-- Analytics Tab -->
+      <div class="tab-pane" data-pane="analytics" data-testid="pane-analytics">
+        <div class="analytics-grid" id="analyticsGrid" data-testid="analytics-grid">
+          <div class="analytics-card" data-testid="analytics-congestion-index">
+            <div class="analytics-label">Congestion Index</div>
+            <div class="analytics-value" id="aValCI" data-testid="value-congestion-index">—</div>
+            <div class="analytics-bar"><div class="analytics-fill" id="aBarCI" style="width:0%; background: #ff4d4d;"></div></div>
+          </div>
+          <div class="analytics-card" data-testid="analytics-avg-speed">
+            <div class="analytics-label">Average Speed</div>
+            <div class="analytics-value" id="aValSpeed" data-testid="value-avg-speed">— km/h</div>
+            <div class="analytics-bar"><div class="analytics-fill" id="aBarSpeed" style="width:0%; background: #4fc3f7;"></div></div>
+          </div>
+          <div class="analytics-card" data-testid="analytics-road-density">
+            <div class="analytics-label">Road Network Density</div>
+            <div class="analytics-value" id="aValDensity" data-testid="value-road-density">—</div>
+            <div class="analytics-bar"><div class="analytics-fill" id="aBarDensity" style="width:0%; background: #34d399;"></div></div>
+          </div>
+          <div class="analytics-card" data-testid="analytics-incident-rate">
+            <div class="analytics-label">Incident Rate</div>
+            <div class="analytics-value" id="aValIncident" data-testid="value-incident-rate">—</div>
+            <div class="analytics-bar"><div class="analytics-fill" id="aBarIncident" style="width:0%; background: #fbbf24;"></div></div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</main>
+
+<!-- Tooltip -->
+<div class="map-tooltip" id="mapTooltip" data-testid="map-tooltip"></div>
+
+<!-- Camera Viewer Modal -->
+<div class="cam-modal-backdrop" id="camModalBackdrop" data-testid="cam-modal-backdrop">
+  <div class="cam-modal" id="camModal" data-testid="cam-modal">
+    <div class="cam-modal-header">
+      <div class="cam-modal-title-wrap">
+        <div class="cam-modal-badge" id="camModalBadge">LIVE</div>
+        <div class="cam-modal-title" id="camModalTitle">Camera Feed</div>
+      </div>
+      <div class="cam-modal-controls">
+        <button class="cam-modal-btn" id="camModalRefresh" title="Refresh image" data-testid="btn-modal-refresh">
+          <i data-lucide="refresh-cw"></i>
+        </button>
+        <button class="cam-modal-btn" id="camModalClose" title="Close" data-testid="btn-modal-close">
+          <i data-lucide="x"></i>
+        </button>
+      </div>
+    </div>
+    <div class="cam-modal-img-wrap">
+      <img id="camModalImg" src="" alt="Live camera feed" class="cam-modal-img" data-testid="cam-modal-img" />
+      <div class="cam-modal-img-error hidden" id="camModalError">
+        <i data-lucide="camera-off"></i>
+        <span>Feed unavailable</span>
+      </div>
+      <div class="cam-modal-pulse" id="camModalPulse"></div>
+    </div>
+    <div class="cam-modal-meta">
+      <div class="cam-meta-row">
+        <i data-lucide="map-pin"></i>
+        <span id="camModalLocation">—</span>
+      </div>
+      <div class="cam-meta-row">
+        <i data-lucide="database"></i>
+        <span id="camModalSource">—</span>
+      </div>
+      <div class="cam-meta-row">
+        <i data-lucide="clock"></i>
+        <span id="camModalUpdated">—</span>
+      </div>
+      <div class="cam-meta-row">
+        <i data-lucide="navigation"></i>
+        <span id="camModalCoords">—</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- AI Journey Planner Floating Button -->
+<button class="ai-fab" id="aiFab" data-testid="btn-ai-fab" aria-label="Open AI Journey Planner">
+  <div class="ai-fab-inner">
+    <svg class="ai-fab-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M12 2L2 7l10 5 10-5-10-5z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+      <path d="M2 17l10 5 10-5" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+      <path d="M2 12l10 5 10-5" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+    </svg>
+    <span class="ai-fab-label">QI Journey Planner</span>
+  </div>
+  <span class="ai-fab-pulse"></span>
+</button>
+
+<!-- AI Journey Planner Chat Panel -->
+<div class="ai-panel" id="aiPanel" data-testid="ai-panel">
+  <div class="ai-panel-header">
+    <div class="ai-panel-title-wrap">
+      <div class="ai-panel-logo">
+        <svg viewBox="0 0 24 24" fill="none" width="20" height="20">
+          <path d="M12 2L2 7l10 5 10-5-10-5z" stroke="#fff" stroke-width="1.8" stroke-linejoin="round"/>
+          <path d="M2 17l10 5 10-5" stroke="#fff" stroke-width="1.8" stroke-linejoin="round"/>
+          <path d="M2 12l10 5 10-5" stroke="#fff" stroke-width="1.8" stroke-linejoin="round"/>
+        </svg>
+      </div>
+      <div>
+        <div class="ai-panel-title">MIMOS <span class="accent">QI</span> Journey Planner</div>
+        <div class="ai-panel-sub">AI-powered route intelligence</div>
+      </div>
+    </div>
+    <button class="ai-panel-close" id="aiPanelClose" aria-label="Close">
+      <i data-lucide="x"></i>
+    </button>
+  </div>
+
+  <!-- Quick-start chips -->
+  <div class="ai-quickchips" id="aiQuickChips">
+    <button class="ai-chip" data-prompt="Plan my journey from Seri Kembangan to KLCC">KL City Route</button>
+    <button class="ai-chip" data-prompt="How do I travel from KL to Penang by car?">KL → Penang</button>
+    <button class="ai-chip" data-prompt="Plan route from KL to Singapore">KL → Singapore</button>
+    <button class="ai-chip" data-prompt="Find nearest petrol stations near my current location">Petrol Nearby</button>
+    <button class="ai-chip" data-prompt="Find EV charging stations near Kuala Lumpur">EV Charging</button>
+    <button class="ai-chip" data-prompt="What are the emergency SOS numbers for highways in Malaysia?">SOS Numbers</button>
+  </div>
+
+  <!-- Chat messages -->
+  <div class="ai-messages" id="aiMessages" data-testid="ai-messages">
+    <div class="ai-msg ai-msg-bot" data-testid="ai-welcome">
+      <div class="ai-msg-avatar">
+        <svg viewBox="0 0 24 24" fill="none" width="16" height="16"><path d="M12 2L2 7l10 5 10-5-10-5z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M2 17l10 5 10-5" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M2 12l10 5 10-5" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
+      </div>
+      <div class="ai-msg-bubble">
+        <strong>MIMOS QI Journey Planner</strong> — your intelligent travel assistant.
+        <br><br>I can help you with:
+        <ul class="ai-feature-list">
+          <li>🗺️ <b>ETA &amp; Route</b> — estimated travel time &amp; best route</li>
+          <li>💰 <b>Travel Cost</b> — toll charges + fuel cost estimate</li>
+          <li>⛽ <b>Petrol Stations</b> — nearest stations along your route</li>
+          <li>⚡ <b>EV Charging</b> — charging stations near your journey</li>
+          <li>🛢️ <b>Fuel Consumption</b> — estimated litres used</li>
+          <li>🚨 <b>SOS &amp; Emergency</b> — highway hotlines &amp; numbers</li>
+        </ul>
+        Type a destination or pick a quick route above.
+      </div>
+    </div>
+  </div>
+
+  <!-- Input bar -->
+  <div class="ai-input-bar">
+    <input type="text" class="ai-input" id="aiInput" placeholder="Ask: Plan route from KL to JB…" autocomplete="off" data-testid="ai-input" />
+    <button class="ai-send-btn" id="aiSendBtn" data-testid="btn-ai-send">
+      <i data-lucide="send"></i>
+    </button>
+  </div>
+</div>
+
+<!-- Mobile sidebar overlay backdrop -->
+<div class="mobile-overlay" id="mobileOverlay" data-testid="mobile-overlay"></div>
+
+<!-- Mobile bottom sheet drag handle -->
+<div class="mobile-sheet-handle" id="mobileSheetHandle" aria-hidden="true"><div class="handle-bar"></div></div>
+
+<!-- MapLibre auto-initializes, no key needed -->
+<script>window.mapAPIReady = true;</script>
+
+<script src="app.js"></script>
+</body>
+</html>
